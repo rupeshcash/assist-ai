@@ -1,0 +1,44 @@
+USB CAMERA APP - BUILD INSTRUCTIONS
+====================================
+
+The Android app is ready! Here's how to build the APK:
+
+OPTION 1: Build with Android Studio (Recommended - Fastest)
+------------------------------------------------------------
+1. Install Android Studio from: https://developer.android.com/studio
+2. Open Android Studio
+3. Click "Open" and select this folder: C:\Users\rupes\Downloads\assist-ai
+4. Wait for Gradle sync to complete (first time takes a few minutes)
+5. Click Build > Build Bundle(s) / APK(s) > Build APK(s)
+6. APK will be at: app\build\outputs\apk\debug\app-debug.apk
+
+OPTION 2: Command Line Build
+-----------------------------
+1. Install JDK 17 or higher
+2. Install Android SDK Command-line tools
+3. Set ANDROID_HOME environment variable
+4. Run: gradlew.bat assembleDebug
+5. APK will be at: app\build\outputs\apk\debug\app-debug.apk
+
+INSTALLING THE APK
+------------------
+1. Enable "Unknown Sources" on your Android device
+2. Transfer app-debug.apk to your phone
+3. Open the APK file on your phone to install
+4. Connect USB camera via OTG adapter
+5. Grant USB permissions when prompted
+
+APP FEATURES
+------------
+- Detects USB cameras connected via OTG
+- Requests USB permissions automatically
+- Displays live camera preview
+- Shows connection status
+- Works with most UVC-compatible USB cameras
+
+REQUIREMENTS
+------------
+- Android 7.0 (API 24) or higher
+- OTG adapter
+- UVC-compatible USB camera
+- USB Host support on phone

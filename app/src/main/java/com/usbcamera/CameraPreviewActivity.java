@@ -4,13 +4,13 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.graphics.SurfaceTexture;
 import android.hardware.usb.UsbDevice;
-import android.hardware.usb.UsbDeviceConnection;
-import android.hardware.usb.UsbEndpoint;
-import android.hardware.usb.UsbInterface;
 import android.hardware.usb.UsbManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
+import android.view.Surface;
 import android.view.TextureView;
 import android.widget.Button;
 import android.widget.TextView;
@@ -18,17 +18,23 @@ import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import java.util.HashMap;
+import com.serenegiant.usb.CameraDialog;
+import com.serenegiant.usb.USBMonitor;
+import com.serenegiant.usb.UVCCamera;
 
 public class CameraPreviewActivity extends AppCompatActivity {
+    private static final String TAG = "CameraPreview";
+    private static final int PREVIEW_WIDTH = 640;
+    private static final int PREVIEW_HEIGHT = 480;
 
-    private UsbManager usbManager;
     private TextureView cameraView;
     private TextView statusText;
     private TextView instructionsText;
     private Button backButton;
-    private UsbDevice usbCamera;
-    private UsbDeviceConnection connection;
+
+    private USBMonitor usbMonitor;
+    private UVCCamera uvcCamera;
+    private Surface previewSurface;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -40,11 +46,15 @@ public class CameraPreviewActivity extends AppCompatActivity {
         instructionsText = findViewById(R.id.instructions_text);
         backButton = findViewById(R.id.back_button);
 
-        usbManager = (UsbManager) getSystemService(Context.USB_SERVICE);
-
         backButton.setOnClickListener(v -> finish());
 
-        // Register USB receiver
+        // Initialize USB monitor
+        usbMonitor = new USBMonitor(this, onDeviceConnectListener);
+
+        // Set up TextureView listener
+        cameraView.setSurfaceTextureListener(surfaceTextureListener);
+
+        // Register USB detach receiver
         IntentFilter filter = new IntentFilter();
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
 
@@ -54,8 +64,101 @@ public class CameraPreviewActivity extends AppCompatActivity {
             registerReceiver(usbReceiver, filter);
         }
 
-        detectAndConnectCamera();
+        statusText.setText("Initializing camera...");
     }
+
+    private final TextureView.SurfaceTextureListener surfaceTextureListener =
+            new TextureView.SurfaceTextureListener() {
+        @Override
+        public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+            Log.d(TAG, "Surface available: " + width + "x" + height);
+            previewSurface = new Surface(surface);
+            startCameraIfReady();
+        }
+
+        @Override
+        public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
+            Log.d(TAG, "Surface size changed: " + width + "x" + height);
+        }
+
+        @Override
+        public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+            Log.d(TAG, "Surface destroyed");
+            stopCamera();
+            if (previewSurface != null) {
+                previewSurface.release();
+                previewSurface = null;
+            }
+            return true;
+        }
+
+        @Override
+        public void onSurfaceTextureUpdated(SurfaceTexture surface) {
+            // Frame updates - can be used for statistics
+        }
+    };
+
+    private final USBMonitor.OnDeviceConnectListener onDeviceConnectListener =
+            new USBMonitor.OnDeviceConnectListener() {
+        @Override
+        public void onAttach(UsbDevice device) {
+            Log.d(TAG, "USB Device attached: " + device.getDeviceName());
+            statusText.setText("Camera attached!");
+            usbMonitor.requestPermission(device);
+        }
+
+        @Override
+        public void onConnect(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock, boolean createNew) {
+            Log.d(TAG, "USB Device connected: " + device.getDeviceName());
+            statusText.setText("Connected to camera!");
+
+            try {
+                uvcCamera = new UVCCamera();
+                uvcCamera.open(ctrlBlock);
+
+                Log.d(TAG, "Camera opened successfully");
+                instructionsText.setText(
+                    "Camera Information:\n" +
+                    "Device: " + device.getDeviceName() + "\n" +
+                    "Vendor ID: " + device.getVendorId() + "\n" +
+                    "Product ID: " + device.getProductId() + "\n\n" +
+                    "Status: Connected and ready\n" +
+                    "Preview: Starting..."
+                );
+
+                startCameraIfReady();
+
+            } catch (Exception e) {
+                Log.e(TAG, "Error opening camera", e);
+                statusText.setText("Error: " + e.getMessage());
+                instructionsText.setText("Failed to open camera:\n" + e.getMessage());
+                releaseCamera();
+            }
+        }
+
+        @Override
+        public void onDisconnect(UsbDevice device, USBMonitor.UsbControlBlock ctrlBlock) {
+            Log.d(TAG, "USB Device disconnected: " + device.getDeviceName());
+            statusText.setText("Camera disconnected");
+            Toast.makeText(CameraPreviewActivity.this,
+                "USB camera disconnected", Toast.LENGTH_SHORT).show();
+            stopCamera();
+        }
+
+        @Override
+        public void onDettach(UsbDevice device) {
+            Log.d(TAG, "USB Device detached: " + device.getDeviceName());
+            statusText.setText("Camera detached");
+            stopCamera();
+        }
+
+        @Override
+        public void onCancel(UsbDevice device) {
+            Log.d(TAG, "USB permission cancelled");
+            statusText.setText("Permission denied");
+            instructionsText.setText("Camera permission was denied.\nPlease grant permission to use the camera.");
+        }
+    };
 
     private final BroadcastReceiver usbReceiver = new BroadcastReceiver() {
         @Override
@@ -68,118 +171,93 @@ public class CameraPreviewActivity extends AppCompatActivity {
         }
     };
 
-    private void detectAndConnectCamera() {
-        HashMap<String, UsbDevice> deviceList = usbManager.getDeviceList();
+    private void startCameraIfReady() {
+        if (uvcCamera != null && previewSurface != null) {
+            try {
+                Log.d(TAG, "Starting camera preview...");
 
-        if (deviceList.isEmpty()) {
-            statusText.setText("No USB devices found");
-            showInstructions("Please connect a USB camera via OTG adapter");
-            return;
-        }
+                // Set preview size and format
+                uvcCamera.setPreviewSize(
+                    PREVIEW_WIDTH,
+                    PREVIEW_HEIGHT,
+                    UVCCamera.FRAME_FORMAT_MJPEG
+                );
 
-        for (UsbDevice device : deviceList.values()) {
-            if (isVideoDevice(device)) {
-                usbCamera = device;
-                connectToCamera(device);
-                return;
+                uvcCamera.setPreviewDisplay(previewSurface);
+                uvcCamera.startPreview();
+
+                statusText.setText("✓ Live Preview Active");
+                instructionsText.setText(
+                    instructionsText.getText() + "\n\n" +
+                    "Preview: ACTIVE (" + PREVIEW_WIDTH + "x" + PREVIEW_HEIGHT + ")\n" +
+                    "Format: MJPEG"
+                );
+
+                Log.d(TAG, "Preview started successfully");
+
+            } catch (Exception e) {
+                Log.e(TAG, "Error starting preview", e);
+                statusText.setText("Error starting preview");
+                instructionsText.setText("Failed to start preview:\n" + e.getMessage());
             }
-        }
-
-        // Try first device anyway
-        if (!deviceList.isEmpty()) {
-            UsbDevice device = deviceList.values().iterator().next();
-            usbCamera = device;
-            connectToCamera(device);
         } else {
-            showInstructions("No USB camera detected");
+            Log.d(TAG, "Not ready to start preview - camera: " + uvcCamera + ", surface: " + previewSurface);
         }
     }
 
-    private boolean isVideoDevice(UsbDevice device) {
-        int deviceClass = device.getDeviceClass();
-        return deviceClass == 14 || deviceClass == 239 || deviceClass == 0;
-    }
-
-    private void connectToCamera(UsbDevice device) {
-        if (!usbManager.hasPermission(device)) {
-            statusText.setText("No USB permission - please grant permission from main screen first");
-            showInstructions("Go back and tap 'Scan for USB Devices' to grant permission");
-            return;
-        }
-
-        try {
-            connection = usbManager.openDevice(device);
-
-            if (connection != null) {
-                statusText.setText("✓ Connected to USB Camera!");
-
-                // Get camera info
-                StringBuilder info = new StringBuilder();
-                info.append("Camera Connected Successfully!\n\n");
-                info.append("Device: ").append(device.getDeviceName()).append("\n");
-                info.append("Vendor ID: ").append(device.getVendorId()).append("\n");
-                info.append("Product ID: ").append(device.getProductId()).append("\n");
-                info.append("Interfaces: ").append(device.getInterfaceCount()).append("\n\n");
-
-                // Find video streaming interface
-                boolean foundVideoInterface = false;
-                for (int i = 0; i < device.getInterfaceCount(); i++) {
-                    UsbInterface usbInterface = device.getInterface(i);
-                    info.append("Interface ").append(i).append(":\n");
-                    info.append("  Class: ").append(usbInterface.getInterfaceClass()).append("\n");
-                    info.append("  Subclass: ").append(usbInterface.getInterfaceSubclass()).append("\n");
-                    info.append("  Endpoints: ").append(usbInterface.getEndpointCount()).append("\n");
-
-                    // USB Video Class = 14
-                    if (usbInterface.getInterfaceClass() == 14) {
-                        foundVideoInterface = true;
-                        info.append("  ✓ Video Interface Found!\n");
-                    }
-                }
-
-                if (foundVideoInterface) {
-                    info.append("\n✓ This is a UVC camera!\n\n");
-                    info.append("To show live video, you need:\n");
-                    info.append("• UVC protocol implementation\n");
-                    info.append("• MJPEG/H264 decoder\n");
-                    info.append("• Frame rendering pipeline\n\n");
-                    info.append("The camera is ready and can be accessed programmatically.");
-                } else {
-                    info.append("\nDevice may not be a standard UVC camera.");
-                }
-
-                showInstructions(info.toString());
-
-                Toast.makeText(this,
-                    "Camera detected and connected!\nFile descriptor: " + connection.getFileDescriptor(),
-                    Toast.LENGTH_LONG).show();
-
-            } else {
-                statusText.setText("Failed to open camera");
-                showInstructions("Could not open USB device connection");
+    private void stopCamera() {
+        if (uvcCamera != null) {
+            try {
+                uvcCamera.stopPreview();
+            } catch (Exception e) {
+                Log.e(TAG, "Error stopping preview", e);
             }
-        } catch (Exception e) {
-            statusText.setText("Error: " + e.getMessage());
-            showInstructions("Connection failed: " + e.getMessage());
+            releaseCamera();
         }
     }
 
-    private void showInstructions(String text) {
-        instructionsText.setText(text);
+    private void releaseCamera() {
+        if (uvcCamera != null) {
+            try {
+                uvcCamera.destroy();
+            } catch (Exception e) {
+                Log.e(TAG, "Error destroying camera", e);
+            }
+            uvcCamera = null;
+        }
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (usbMonitor != null) {
+            usbMonitor.register();
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        if (usbMonitor != null) {
+            usbMonitor.unregister();
+        }
+        super.onStop();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+
         try {
             unregisterReceiver(usbReceiver);
         } catch (Exception e) {
             // Receiver might not be registered
         }
 
-        if (connection != null) {
-            connection.close();
-            connection = null;
+        stopCamera();
+
+        if (usbMonitor != null) {
+            usbMonitor.destroy();
+            usbMonitor = null;
         }
     }
 }
