@@ -32,7 +32,5 @@ dependencies {
     implementation 'com.google.android.material:material:1.10.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
-    // UVCCamera library for USB camera support
-    implementation 'com.serenegiant:common:8.5.1'
-    implementation 'com.serenegiant:uvccamera:2.14.3'
+    implementation("com.github.chenyeju295.AndroidUSBCamera:libausbc:3.3.6")
 }
