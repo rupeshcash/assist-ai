@@ -48,10 +48,10 @@
 
     <Button
         android:id="@+id/preview_button"
-        android:layout_width="wrap_content"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:text="📹 Show Camera Preview"
-        android:textSize="18sp"
+        android:text="Show Camera Preview"
+        android:textSize="16sp"
         android:backgroundTint="#4CAF50"
         app:layout_constraintTop_toBottomOf="@id/scan_button"
         app:layout_constraintLeft_toLeftOf="parent"
@@ -66,9 +66,9 @@
         android:textSize="18sp"
         android:textStyle="bold"
         android:textColor="#000000"
-        app:layout_constraintTop_toBottomOf="@id/scan_button"
+        app:layout_constraintTop_toBottomOf="@id/preview_button"
         app:layout_constraintLeft_toLeftOf="parent"
-        android:layout_marginTop="32dp"/>
+        android:layout_marginTop="24dp"/>
 
     <ScrollView
         android:layout_width="0dp"

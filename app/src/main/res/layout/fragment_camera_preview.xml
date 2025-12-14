@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <TextView
+        android:id="@+id/preview_status_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:text="Connecting to camera..."
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:padding="12dp"
+        android:background="#CC000000"
+        android:gravity="center" />
+
+    <FrameLayout
+        android:id="@+id/camera_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@id/preview_status_text"
+        android:layout_above="@id/info_container"
+        android:background="#000000">
+
+        <com.jiangdg.ausbc.widget.AspectRatioTextureView
+            android:id="@+id/camera_texture_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+    </FrameLayout>
+
+    <LinearLayout
+        android:id="@+id/info_container"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_above="@id/back_button"
+        android:orientation="vertical"
+        android:background="#CC000000"
+        android:padding="12dp">
+
+        <TextView
+            android:id="@+id/instructions_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Initializing..."
+            android:textColor="#CCCCCC"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:maxLines="4"
+            android:ellipsize="end"/>
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/back_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="16dp"
+        android:text="Back to Main"
+        android:textSize="16sp"
+        android:backgroundTint="#4CAF50" />
+
+</RelativeLayout>
