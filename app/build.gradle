@@ -33,4 +33,13 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
     implementation("com.github.chenyeju295.AndroidUSBCamera:libausbc:3.3.6")
+
+    // Gemini AI SDK
+    implementation 'com.google.ai.client.generativeai:generativeai:0.9.0'
+
+    // Guava (required by Gemini SDK)
+    implementation 'com.google.guava:guava:31.1-android'
+
+    // Coroutines for async operations
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
 }

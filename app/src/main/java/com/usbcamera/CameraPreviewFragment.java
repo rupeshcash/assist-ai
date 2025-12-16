@@ -1,5 +1,6 @@
 package com.usbcamera;
 
+import android.graphics.Bitmap;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -97,5 +98,47 @@ public class CameraPreviewFragment extends CameraFragment {
                     break;
             }
         });
+    }
+
+    /**
+     * Captures the current camera frame as a Bitmap
+     * @return Bitmap of current frame, or null if not available
+     */
+    public Bitmap captureFrame() {
+        if (cameraView == null) {
+            Log.e(TAG, "Camera view is null");
+            return null;
+        }
+
+        try {
+            Bitmap bitmap = cameraView.getBitmap();
+            if (bitmap != null) {
+                Log.d(TAG, "Frame captured: " + bitmap.getWidth() + "x" + bitmap.getHeight());
+            } else {
+                Log.w(TAG, "Captured bitmap is null");
+            }
+            return bitmap;
+        } catch (Exception e) {
+            Log.e(TAG, "Error capturing frame", e);
+            return null;
+        }
+    }
+
+    /**
+     * Updates the status text (called from Activity)
+     */
+    public void updateStatus(String status) {
+        if (statusText != null && getActivity() != null) {
+            getActivity().runOnUiThread(() -> statusText.setText(status));
+        }
+    }
+
+    /**
+     * Updates the instructions text (called from Activity)
+     */
+    public void updateInstructions(String instructions) {
+        if (instructionsText != null && getActivity() != null) {
+            getActivity().runOnUiThread(() -> instructionsText.setText(instructions));
+        }
     }
 }
