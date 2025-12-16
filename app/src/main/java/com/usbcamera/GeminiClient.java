@@ -17,7 +17,7 @@ import java.util.concurrent.Executors;
 
 public class GeminiClient {
     private static final String TAG = "GeminiClient";
-    private static final String MODEL_NAME = "gemini-1.5-flash";
+    private static final String MODEL_NAME = "gemini-2.5-flash";
 
     private GenerativeModelFutures model;
     private Executor executor;
