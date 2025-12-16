@@ -1,6 +1,8 @@
 package com.usbcamera;
 
+import android.content.Context;
 import android.graphics.Bitmap;
+import android.os.Bundle;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -11,6 +13,7 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.view.ContextThemeWrapper;
 
 import com.jiangdg.ausbc.MultiCameraClient;
 import com.jiangdg.ausbc.base.CameraFragment;
@@ -31,7 +34,13 @@ public class CameraPreviewFragment extends CameraFragment {
     @Nullable
     @Override
     public View getRootView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container) {
-        rootView = inflater.inflate(R.layout.fragment_camera_preview, container, false);
+        // Create a new context with the Material Components theme
+        Context contextThemeWrapper = new ContextThemeWrapper(getActivity(), R.style.Theme_AssistAI);
+        // Clone the inflater with the new context
+        LayoutInflater localInflater = inflater.cloneInContext(contextThemeWrapper);
+
+        // Inflate the layout using the new inflater
+        rootView = localInflater.inflate(R.layout.fragment_camera_preview, container, false);
 
         cameraView = rootView.findViewById(R.id.camera_texture_view);
         statusText = rootView.findViewById(R.id.preview_status_text);

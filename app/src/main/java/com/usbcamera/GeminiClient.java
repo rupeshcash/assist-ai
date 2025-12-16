@@ -8,6 +8,7 @@ import com.google.ai.client.generativeai.GenerativeModel;
 import com.google.ai.client.generativeai.java.GenerativeModelFutures;
 import com.google.ai.client.generativeai.type.Content;
 import com.google.ai.client.generativeai.type.GenerateContentResponse;
+import com.google.ai.client.generativeai.type.ServerException;
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -81,7 +82,11 @@ public class GeminiClient {
                     public void onFailure(Throwable t) {
                         Log.e(TAG, "Gemini error", t);
                         if (callback != null) {
-                            callback.onError("AI processing failed: " + t.getMessage());
+                            if (t instanceof ServerException && t.getMessage().contains("503")) {
+                                callback.onError("The AI model is currently overloaded. Please try again in a moment.");
+                            } else {
+                                callback.onError("AI processing failed: " + t.getMessage());
+                            }
                         }
                     }
                 }, executor);
@@ -95,75 +100,38 @@ public class GeminiClient {
         });
     }
 
-    /**
-     * Optimizes image for faster API upload and processing
-     * Resizes large images while maintaining aspect ratio
-     * Target: max dimension of 1024px for optimal balance of speed and quality
-     */
     private Bitmap optimizeImage(Bitmap original) {
         final int MAX_DIMENSION = 1024;
-
         int width = original.getWidth();
         int height = original.getHeight();
 
-        // If image is already small enough, return as-is
         if (width <= MAX_DIMENSION && height <= MAX_DIMENSION) {
-            Log.d(TAG, "Image already optimal size, no resize needed");
             return original;
         }
 
-        // Calculate scale factor to maintain aspect ratio
-        float scale;
-        if (width > height) {
-            scale = (float) MAX_DIMENSION / width;
-        } else {
-            scale = (float) MAX_DIMENSION / height;
-        }
-
+        float scale = (width > height) ? (float) MAX_DIMENSION / width : (float) MAX_DIMENSION / height;
         int newWidth = Math.round(width * scale);
         int newHeight = Math.round(height * scale);
 
-        Log.d(TAG, "Resizing from " + width + "x" + height + " to " + newWidth + "x" + newHeight);
-
         Bitmap resized = Bitmap.createScaledBitmap(original, newWidth, newHeight, true);
-
-        // Free up memory from original if it's different from resized
         if (resized != original) {
             original.recycle();
         }
-
         return resized;
     }
 
     private String buildPrompt(String userQuery) {
         String systemPrompt = "You are assisting a blind person. Provide clear, concise answers in 1-2 sentences. ";
+        String query = (userQuery != null) ? userQuery.toLowerCase().trim() : "";
 
-        if (userQuery == null || userQuery.trim().isEmpty()) {
-            return systemPrompt + "Describe what you see in this image, focusing on any obstacles or important objects.";
-        }
-
-        // Handle common queries
-        String query = userQuery.toLowerCase().trim();
-
-        if (query.contains("obstacle") || query.contains("ahead") || query.contains("front") || query.contains("path")) {
-            return systemPrompt + "Describe any obstacles or hazards visible in this image. Mention their approximate location (left, right, center, head level, ground level).";
-        } else if (query.contains("where") || query.contains("find") || query.contains("locate")) {
-            return systemPrompt + "User asked: '" + userQuery + "'. Analyze the image and answer their question about location or navigation.";
-        } else if (query.contains("which") || query.contains("identify") || query.contains("what is")) {
-            return systemPrompt + "User asked: '" + userQuery + "'. Identify and describe the specific objects or items they're asking about.";
-        } else if (query.contains("read") || query.contains("label") || query.contains("text")) {
-            return systemPrompt + "Read any visible text in this image clearly and accurately.";
+        if (query.isEmpty() || query.contains("describe")) {
+            return systemPrompt + "Describe what you see, focusing on obstacles or important objects.";
+        } else if (query.contains("obstacle") || query.contains("ahead") || query.contains("path")) {
+            return systemPrompt + "Describe any obstacles or hazards visible. Mention their approximate location.";
+        } else if (query.contains("read") || query.contains("text")) {
+            return systemPrompt + "Read any visible text in this image clearly.";
         } else {
-            return systemPrompt + "User asked: '" + userQuery + "'. Answer their question based on what you see in the image.";
+            return systemPrompt + "User asked: '" + userQuery + "'. Answer their question based on the image.";
         }
-    }
-
-    // Preset prompts for common scenarios
-    public static class Prompts {
-        public static final String OBSTACLE_DETECTION = "Describe any obstacles or hazards visible";
-        public static final String GENERAL_DESCRIPTION = "What do you see?";
-        public static final String OBJECT_IDENTIFICATION = "What objects are in front of me?";
-        public static final String PATH_CLEAR = "Is the path ahead clear?";
-        public static final String READ_TEXT = "Read any text you see";
     }
 }

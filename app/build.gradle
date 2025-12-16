@@ -2,6 +2,11 @@ plugins {
     id 'com.android.application'
 }
 
+def localProperties = new Properties()
+if (rootProject.file('local.properties').exists()) {
+    localProperties.load(rootProject.file('local.properties').newDataInputStream())
+}
+
 android {
     namespace 'com.usbcamera'
     compileSdk 34
@@ -12,6 +17,8 @@ android {
         targetSdk 34
         versionCode 1
         versionName "1.0"
+
+        buildConfigField "String", "GEMINI_API_KEY", "\"${localProperties.getProperty('GEMINI_API_KEY', '')}\""
     }
 
     buildTypes {
@@ -24,6 +31,10 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 }
 

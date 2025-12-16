@@ -10,7 +10,7 @@
         android:allowBackup="true"
         android:icon="@android:drawable/ic_menu_camera"
         android:label="AssistEyes"
-        android:theme="@style/Theme.AppCompat.Light">
+        android:theme="@style/Theme.AssistAI">
 
         <activity
             android:name=".MainActivity"
@@ -33,8 +33,8 @@
         <activity
             android:name=".CameraPreviewActivity"
             android:exported="false"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.AppCompat.NoActionBar">
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.AssistAI">
         </activity>
     </application>
 

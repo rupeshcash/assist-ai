@@ -224,9 +224,9 @@ public class CameraPreviewActivity extends AppCompatActivity {
         if (micButton != null) {
             runOnUiThread(() -> {
                 if (isActive) {
-                    micButton.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFF44336)); // Red
+                    micButton.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.mic_button_active_color));
                 } else {
-                    micButton.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF2196F3)); // Blue
+                    micButton.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.mic_button_color));
                 }
             });
         }
