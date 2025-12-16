@@ -46,6 +46,13 @@ public class GeminiClient {
 
         executor.execute(() -> {
             try {
+                // Optimize image size for faster upload and processing
+                long resizeStart = System.currentTimeMillis();
+                Bitmap optimizedBitmap = optimizeImage(bitmap);
+                long resizeTime = System.currentTimeMillis() - resizeStart;
+                Log.d(TAG, "⚡ Image optimization took: " + resizeTime + "ms");
+                Log.d(TAG, "📊 Optimized size: " + optimizedBitmap.getWidth() + "x" + optimizedBitmap.getHeight());
+
                 // Build the prompt based on user query or use default
                 String prompt = buildPrompt(userQuery);
 
@@ -54,7 +61,7 @@ public class GeminiClient {
                 // Create content with image and text
                 Content content = new Content.Builder()
                         .addText(prompt)
-                        .addImage(bitmap)
+                        .addImage(optimizedBitmap)
                         .build();
 
                 // Generate content
@@ -86,6 +93,46 @@ public class GeminiClient {
                 }
             }
         });
+    }
+
+    /**
+     * Optimizes image for faster API upload and processing
+     * Resizes large images while maintaining aspect ratio
+     * Target: max dimension of 1024px for optimal balance of speed and quality
+     */
+    private Bitmap optimizeImage(Bitmap original) {
+        final int MAX_DIMENSION = 1024;
+
+        int width = original.getWidth();
+        int height = original.getHeight();
+
+        // If image is already small enough, return as-is
+        if (width <= MAX_DIMENSION && height <= MAX_DIMENSION) {
+            Log.d(TAG, "Image already optimal size, no resize needed");
+            return original;
+        }
+
+        // Calculate scale factor to maintain aspect ratio
+        float scale;
+        if (width > height) {
+            scale = (float) MAX_DIMENSION / width;
+        } else {
+            scale = (float) MAX_DIMENSION / height;
+        }
+
+        int newWidth = Math.round(width * scale);
+        int newHeight = Math.round(height * scale);
+
+        Log.d(TAG, "Resizing from " + width + "x" + height + " to " + newWidth + "x" + newHeight);
+
+        Bitmap resized = Bitmap.createScaledBitmap(original, newWidth, newHeight, true);
+
+        // Free up memory from original if it's different from resized
+        if (resized != original) {
+            original.recycle();
+        }
+
+        return resized;
     }
 
     private String buildPrompt(String userQuery) {

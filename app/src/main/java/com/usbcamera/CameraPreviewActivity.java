@@ -17,7 +17,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton;
 public class CameraPreviewActivity extends AppCompatActivity {
     private static final String TAG = "CameraPreviewActivity";
     private static final int PERMISSION_REQUEST_CODE = 100;
-    private static final String GEMINI_API_KEY = "YOUR_API_KEY_HERE"; // TODO: Replace with your actual API key
+    private static final String GEMINI_API_KEY = "AIzaSyC6PFIUnj cgUno12Is-utBMonD9GeqiTyo";
 
     private CameraPreviewFragment cameraFragment;
     private VoiceManager voiceManager;
@@ -142,13 +142,19 @@ public class CameraPreviewActivity extends AppCompatActivity {
     }
 
     private void processQuery(String userQuery) {
+        long startTime = System.currentTimeMillis();
+
         runOnUiThread(() -> {
             updateStatus("Processing...");
             updateInstructions("Analyzing what the camera sees...");
         });
 
         // Capture frame from camera
+        long captureStart = System.currentTimeMillis();
         Bitmap frame = captureCurrentFrame();
+        long captureTime = System.currentTimeMillis() - captureStart;
+        Log.d(TAG, "⏱️ Frame capture took: " + captureTime + "ms");
+
         if (frame == null) {
             runOnUiThread(() -> {
                 voiceManager.speak("Sorry, I couldn't capture the camera view. Please try again.");
@@ -158,11 +164,19 @@ public class CameraPreviewActivity extends AppCompatActivity {
             return;
         }
 
+        Log.d(TAG, "📸 Original frame size: " + frame.getWidth() + "x" + frame.getHeight());
+
         // Send to Gemini
+        long aiStart = System.currentTimeMillis();
         geminiClient.analyzeImage(frame, userQuery, new GeminiClient.GeminiCallback() {
             @Override
             public void onSuccess(String response) {
+                long aiTime = System.currentTimeMillis() - aiStart;
+                long totalTime = System.currentTimeMillis() - startTime;
+                Log.d(TAG, "⏱️ AI processing took: " + aiTime + "ms");
+                Log.d(TAG, "⏱️ Total processing time: " + totalTime + "ms");
                 Log.d(TAG, "AI response: " + response);
+
                 runOnUiThread(() -> {
                     updateStatus("Speaking response");
                     updateInstructions("AI: " + response);
@@ -172,7 +186,10 @@ public class CameraPreviewActivity extends AppCompatActivity {
 
             @Override
             public void onError(String error) {
+                long totalTime = System.currentTimeMillis() - startTime;
+                Log.e(TAG, "⏱️ Failed after: " + totalTime + "ms");
                 Log.e(TAG, "AI error: " + error);
+
                 runOnUiThread(() -> {
                     String errorMsg = "Sorry, I couldn't process that. Please check your internet connection and try again.";
                     updateStatus("Error");
