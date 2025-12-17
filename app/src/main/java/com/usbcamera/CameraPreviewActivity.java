@@ -1,40 +1,53 @@
 package com.usbcamera;
 
 import android.Manifest;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.os.Bundle;
+import android.os.Handler;
+import android.text.InputType;
 import android.util.Log;
+import android.widget.CompoundButton;
+import android.widget.EditText;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import com.google.android.material.button.MaterialButton;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
+import com.google.android.material.switchmaterial.SwitchMaterial;
 
 public class CameraPreviewActivity extends AppCompatActivity {
     private static final String TAG = "CameraPreviewActivity";
     private static final int PERMISSION_REQUEST_CODE = 100;
-    private static final String GEMINI_API_KEY = "AIzaSyC6PFIUnj cgUno12Is-utBMonD9GeqiTyo";
+    private static final long ACTIVE_MODE_INTERVAL = 3000; // 3 seconds
+    private static final String PREFS_NAME = "AssistEyesPrefs";
+    private static final String KEY_CUSTOM_INSTRUCTION = "custom_instruction";
 
     private CameraPreviewFragment cameraFragment;
     private VoiceManager voiceManager;
     private GeminiClient geminiClient;
     private FloatingActionButton micButton;
+    private SwitchMaterial activeModeSwitch;
+    private MaterialButton settingsButton;
+    private SharedPreferences prefs;
 
     private boolean isProcessing = false;
+    private boolean isVoiceManagerSpeaking = false;
+    private final Handler activeModeHandler = new Handler();
+    private Runnable activeModeRunnable;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_camera_preview);
-
-        // Initialize components
+        prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
         initializeComponents(savedInstanceState);
-
-        // Check and request permissions
         if (checkPermissions()) {
             setupVoiceAndAI();
         } else {
@@ -43,7 +56,6 @@ public class CameraPreviewActivity extends AppCompatActivity {
     }
 
     private void initializeComponents(Bundle savedInstanceState) {
-        // Get camera fragment
         if (savedInstanceState == null) {
             cameraFragment = new CameraPreviewFragment();
             getSupportFragmentManager().beginTransaction()
@@ -56,7 +68,6 @@ public class CameraPreviewActivity extends AppCompatActivity {
     }
 
     private void setupVoiceAndAI() {
-        // Initialize VoiceManager
         voiceManager = new VoiceManager(this, new VoiceManager.VoiceCallback() {
             @Override
             public void onSpeechResult(String text) {
@@ -69,7 +80,6 @@ public class CameraPreviewActivity extends AppCompatActivity {
                 Log.e(TAG, "Speech error: " + error);
                 runOnUiThread(() -> {
                     updateStatus("Listening failed");
-                    Toast.makeText(CameraPreviewActivity.this, "Couldn't hear you. Try again.", Toast.LENGTH_SHORT).show();
                     isProcessing = false;
                     updateMicButton(false);
                 });
@@ -77,7 +87,6 @@ public class CameraPreviewActivity extends AppCompatActivity {
 
             @Override
             public void onListeningStarted() {
-                Log.d(TAG, "Listening started");
                 runOnUiThread(() -> {
                     updateStatus("Listening...");
                     updateInstructions("Speak your question now");
@@ -86,75 +95,143 @@ public class CameraPreviewActivity extends AppCompatActivity {
 
             @Override
             public void onSpeakingStarted() {
-                Log.d(TAG, "Speaking started");
+                isVoiceManagerSpeaking = true;
             }
 
             @Override
             public void onSpeakingCompleted() {
-                Log.d(TAG, "Speaking completed");
+                isVoiceManagerSpeaking = false;
                 runOnUiThread(() -> {
-                    isProcessing = false;
-                    updateStatus("Ready");
-                    updateInstructions("Tap mic to ask a question");
-                    updateMicButton(false);
+                    if (!activeModeSwitch.isChecked()) {
+                        isProcessing = false;
+                        updateStatus("Ready");
+                        updateInstructions("Tap mic to ask a question");
+                        updateMicButton(false);
+                    }
                 });
             }
         });
 
-        // Initialize GeminiClient
-        geminiClient = new GeminiClient(this, GEMINI_API_KEY);
+        geminiClient = new GeminiClient(this, BuildConfig.GEMINI_API_KEY);
 
-        // Setup mic button - delay to ensure fragment is ready
-        micButton = findViewById(R.id.mic_button);
-        if (micButton == null) {
-            // Fragment not yet inflated, retry after a delay
-            new android.os.Handler().postDelayed(() -> {
-                micButton = findViewById(R.id.mic_button);
-                if (micButton != null) {
-                    setupMicButton();
-                }
-            }, 500);
-        } else {
-            setupMicButton();
-        }
+        new Handler().postDelayed(() -> {
+            micButton = findViewById(R.id.mic_button);
+            activeModeSwitch = findViewById(R.id.active_mode_switch);
+            settingsButton = findViewById(R.id.settings_button);
+            if (micButton != null) setupMicButton();
+            if (activeModeSwitch != null) setupActiveModeSwitch();
+            if (settingsButton != null) setupSettingsButton();
+        }, 500);
     }
 
     private void setupMicButton() {
-        if (micButton == null) return;
-
         micButton.setOnClickListener(v -> {
             if (isProcessing) {
-                Toast.makeText(this, "Please wait, processing...", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Please wait...", Toast.LENGTH_SHORT).show();
                 return;
             }
-
             if (!checkPermissions()) {
                 requestPermissions();
                 return;
             }
-
             isProcessing = true;
             updateMicButton(true);
             voiceManager.startListening();
         });
+    }
 
-        Log.d(TAG, "Mic button setup complete");
+    private void setupActiveModeSwitch() {
+        activeModeSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (isChecked) {
+                startActiveMode();
+            } else {
+                stopActiveMode();
+            }
+        });
+
+        activeModeRunnable = () -> {
+            if (activeModeSwitch.isChecked()) {
+                performSilentAnalysis();
+                activeModeHandler.postDelayed(activeModeRunnable, ACTIVE_MODE_INTERVAL);
+            }
+        };
+    }
+
+    private void setupSettingsButton() {
+        settingsButton.setOnClickListener(v -> showCustomInstructionDialog());
+    }
+
+    private void showCustomInstructionDialog() {
+        String currentInstruction = prefs.getString(KEY_CUSTOM_INSTRUCTION, "");
+
+        EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        input.setHint("e.g., Alert me about obstacles at head level");
+        input.setText(currentInstruction);
+        input.setMinLines(3);
+        input.setMaxLines(5);
+        input.setPadding(50, 40, 50, 40);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Active Mode Instruction")
+                .setMessage("Customize what the AI should focus on in Active Mode:")
+                .setView(input)
+                .setPositiveButton("Save", (dialog, which) -> {
+                    String instruction = input.getText().toString().trim();
+                    prefs.edit().putString(KEY_CUSTOM_INSTRUCTION, instruction).apply();
+                    Toast.makeText(this, "Instruction saved!", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Cancel", null)
+                .setNeutralButton("Reset", (dialog, which) -> {
+                    prefs.edit().remove(KEY_CUSTOM_INSTRUCTION).apply();
+                    Toast.makeText(this, "Instruction reset to default", Toast.LENGTH_SHORT).show();
+                })
+                .show();
+    }
+
+    private void startActiveMode() {
+        updateStatus("Active Mode ON");
+        micButton.setEnabled(false);
+        micButton.setAlpha(0.5f);
+        activeModeHandler.post(activeModeRunnable);
+    }
+
+    private void stopActiveMode() {
+        updateStatus("Active Mode OFF");
+        micButton.setEnabled(true);
+        micButton.setAlpha(1.0f);
+        activeModeHandler.removeCallbacks(activeModeRunnable);
+    }
+
+    private void performSilentAnalysis() {
+        if (isVoiceManagerSpeaking || isProcessing) return;
+        Bitmap frame = captureCurrentFrame();
+        if (frame == null) return;
+
+        String customInstruction = prefs.getString(KEY_CUSTOM_INSTRUCTION, null);
+        geminiClient.analyzeForObstacles(frame, customInstruction, new GeminiClient.GeminiCallback() {
+            @Override
+            public void onSuccess(String response) {
+                if (response != null && !response.trim().isEmpty()) {
+                    voiceManager.speak(response);
+                    updateInstructions("AI: " + response);
+                }
+            }
+
+            @Override
+            public void onError(String error) {
+                Log.e(TAG, "Active Mode Error: " + error);
+            }
+        });
     }
 
     private void processQuery(String userQuery) {
-        long startTime = System.currentTimeMillis();
-
         runOnUiThread(() -> {
             updateStatus("Processing...");
             updateInstructions("Analyzing what the camera sees...");
         });
 
-        // Capture frame from camera
-        long captureStart = System.currentTimeMillis();
         Bitmap frame = captureCurrentFrame();
-        long captureTime = System.currentTimeMillis() - captureStart;
-        Log.d(TAG, "⏱️ Frame capture took: " + captureTime + "ms");
-
         if (frame == null) {
             runOnUiThread(() -> {
                 voiceManager.speak("Sorry, I couldn't capture the camera view. Please try again.");
@@ -164,19 +241,9 @@ public class CameraPreviewActivity extends AppCompatActivity {
             return;
         }
 
-        Log.d(TAG, "📸 Original frame size: " + frame.getWidth() + "x" + frame.getHeight());
-
-        // Send to Gemini
-        long aiStart = System.currentTimeMillis();
         geminiClient.analyzeImage(frame, userQuery, new GeminiClient.GeminiCallback() {
             @Override
             public void onSuccess(String response) {
-                long aiTime = System.currentTimeMillis() - aiStart;
-                long totalTime = System.currentTimeMillis() - startTime;
-                Log.d(TAG, "⏱️ AI processing took: " + aiTime + "ms");
-                Log.d(TAG, "⏱️ Total processing time: " + totalTime + "ms");
-                Log.d(TAG, "AI response: " + response);
-
                 runOnUiThread(() -> {
                     updateStatus("Speaking response");
                     updateInstructions("AI: " + response);
@@ -186,12 +253,8 @@ public class CameraPreviewActivity extends AppCompatActivity {
 
             @Override
             public void onError(String error) {
-                long totalTime = System.currentTimeMillis() - startTime;
-                Log.e(TAG, "⏱️ Failed after: " + totalTime + "ms");
-                Log.e(TAG, "AI error: " + error);
-
                 runOnUiThread(() -> {
-                    String errorMsg = "Sorry, I couldn't process that. Please check your internet connection and try again.";
+                    String errorMsg = "Sorry, I couldn't process that.";
                     updateStatus("Error");
                     updateInstructions(errorMsg);
                     voiceManager.speak(errorMsg);
@@ -201,10 +264,7 @@ public class CameraPreviewActivity extends AppCompatActivity {
     }
 
     private Bitmap captureCurrentFrame() {
-        if (cameraFragment == null) {
-            Log.e(TAG, "Camera fragment is null");
-            return null;
-        }
+        if (cameraFragment == null) return null;
         return cameraFragment.captureFrame();
     }
 
@@ -222,13 +282,7 @@ public class CameraPreviewActivity extends AppCompatActivity {
 
     private void updateMicButton(boolean isActive) {
         if (micButton != null) {
-            runOnUiThread(() -> {
-                if (isActive) {
-                    micButton.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.mic_button_active_color));
-                } else {
-                    micButton.setBackgroundTintList(ContextCompat.getColorStateList(this, R.color.mic_button_color));
-                }
-            });
+            runOnUiThread(() -> micButton.setBackgroundTintList(ContextCompat.getColorStateList(this, isActive ? R.color.mic_button_active_color : R.color.mic_button_color)));
         }
     }
 
@@ -237,9 +291,7 @@ public class CameraPreviewActivity extends AppCompatActivity {
     }
 
     private void requestPermissions() {
-        ActivityCompat.requestPermissions(this,
-                new String[]{Manifest.permission.RECORD_AUDIO},
-                PERMISSION_REQUEST_CODE);
+        ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, PERMISSION_REQUEST_CODE);
     }
 
     @Override
@@ -248,9 +300,8 @@ public class CameraPreviewActivity extends AppCompatActivity {
         if (requestCode == PERMISSION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 setupVoiceAndAI();
-                Toast.makeText(this, "Permission granted! Tap the mic to start.", Toast.LENGTH_SHORT).show();
             } else {
-                Toast.makeText(this, "Microphone permission is required to use voice features", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Microphone permission is required.", Toast.LENGTH_LONG).show();
             }
         }
     }
@@ -258,6 +309,7 @@ public class CameraPreviewActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        stopActiveMode();
         if (voiceManager != null) {
             voiceManager.destroy();
         }

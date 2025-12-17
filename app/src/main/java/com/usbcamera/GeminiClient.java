@@ -18,11 +18,10 @@ import java.util.concurrent.Executors;
 
 public class GeminiClient {
     private static final String TAG = "GeminiClient";
-    private static final String MODEL_NAME = "gemini-2.5-flash";
+    private static final String MODEL_NAME = "gemini-2.5-flash-lite";
 
-    private GenerativeModelFutures model;
-    private Executor executor;
-    private Context context;
+    private final GenerativeModelFutures model;
+    private final Executor executor;
 
     public interface GeminiCallback {
         void onSuccess(String response);
@@ -30,12 +29,9 @@ public class GeminiClient {
     }
 
     public GeminiClient(Context context, String apiKey) {
-        this.context = context;
         this.executor = Executors.newSingleThreadExecutor();
-
         GenerativeModel gm = new GenerativeModel(MODEL_NAME, apiKey);
         this.model = GenerativeModelFutures.from(gm);
-
         Log.d(TAG, "Gemini client initialized");
     }
 
@@ -47,61 +43,82 @@ public class GeminiClient {
 
         executor.execute(() -> {
             try {
-                // Optimize image size for faster upload and processing
-                long resizeStart = System.currentTimeMillis();
                 Bitmap optimizedBitmap = optimizeImage(bitmap);
-                long resizeTime = System.currentTimeMillis() - resizeStart;
-                Log.d(TAG, "⚡ Image optimization took: " + resizeTime + "ms");
-                Log.d(TAG, "📊 Optimized size: " + optimizedBitmap.getWidth() + "x" + optimizedBitmap.getHeight());
-
-                // Build the prompt based on user query or use default
                 String prompt = buildPrompt(userQuery);
 
-                Log.d(TAG, "Sending request to Gemini with prompt: " + prompt);
-
-                // Create content with image and text
                 Content content = new Content.Builder()
                         .addText(prompt)
                         .addImage(optimizedBitmap)
                         .build();
 
-                // Generate content
                 ListenableFuture<GenerateContentResponse> response = model.generateContent(content);
+                Futures.addCallback(response, new FutureCallback<GenerateContentResponse>() {
+                    @Override
+                    public void onSuccess(GenerateContentResponse result) {
+                        callback.onSuccess(result.getText());
+                    }
 
+                    @Override
+                    public void onFailure(Throwable t) {
+                        handleFailure(t, callback);
+                    }
+                }, executor);
+            } catch (Exception e) {
+                callback.onError("Failed to process image: " + e.getMessage());
+            }
+        });
+    }
+
+    public void analyzeForObstacles(Bitmap bitmap, String customInstruction, GeminiCallback callback) {
+        if (bitmap == null) {
+            callback.onError("No image provided");
+            return;
+        }
+
+        executor.execute(() -> {
+            try {
+                Bitmap optimizedBitmap = optimizeImage(bitmap);
+                String prompt = buildObstaclePrompt(customInstruction);
+
+                Content content = new Content.Builder()
+                        .addText(prompt)
+                        .addImage(optimizedBitmap)
+                        .build();
+
+                ListenableFuture<GenerateContentResponse> response = model.generateContent(content);
                 Futures.addCallback(response, new FutureCallback<GenerateContentResponse>() {
                     @Override
                     public void onSuccess(GenerateContentResponse result) {
                         String text = result.getText();
-                        Log.d(TAG, "Gemini response: " + text);
-                        if (callback != null) {
+                        if (text != null && text.trim().equalsIgnoreCase("clear")) {
+                            callback.onSuccess(""); // Send empty string if clear
+                        } else {
                             callback.onSuccess(text);
                         }
                     }
 
                     @Override
                     public void onFailure(Throwable t) {
-                        Log.e(TAG, "Gemini error", t);
-                        if (callback != null) {
-                            if (t instanceof ServerException && t.getMessage().contains("503")) {
-                                callback.onError("The AI model is currently overloaded. Please try again in a moment.");
-                            } else {
-                                callback.onError("AI processing failed: " + t.getMessage());
-                            }
-                        }
+                        handleFailure(t, callback);
                     }
                 }, executor);
-
             } catch (Exception e) {
-                Log.e(TAG, "Error calling Gemini", e);
-                if (callback != null) {
-                    callback.onError("Failed to process image: " + e.getMessage());
-                }
+                callback.onError("Failed to process image: " + e.getMessage());
             }
         });
     }
 
+    private void handleFailure(Throwable t, GeminiCallback callback) {
+        Log.e(TAG, "Gemini error", t);
+        if (t instanceof ServerException && t.getMessage().contains("503")) {
+            callback.onError("The AI model is currently overloaded.");
+        } else {
+            callback.onError("AI processing failed: " + t.getMessage());
+        }
+    }
+
     private Bitmap optimizeImage(Bitmap original) {
-        final int MAX_DIMENSION = 1024;
+        final int MAX_DIMENSION = 512; // Reduced from 768 for faster upload
         int width = original.getWidth();
         int height = original.getHeight();
 
@@ -121,17 +138,21 @@ public class GeminiClient {
     }
 
     private String buildPrompt(String userQuery) {
-        String systemPrompt = "You are assisting a blind person. Provide clear, concise answers in 1-2 sentences. ";
+        String systemPrompt = "You are assisting a person with visual impairments. Provide clear, concise answers in 1-2 sentences max. strictly. be concise as possible. You must not mention image or something. Simulate yourself as you are person's smart cane with eyes. Help them being a personal assistant";
         String query = (userQuery != null) ? userQuery.toLowerCase().trim() : "";
+        String finalPrompt = "";
+        if(!query.isEmpty()) {
+            finalPrompt = systemPrompt + "User asked: '" + userQuery + "'. Answer their question based on the image.";
+        }
+        System.out.println("Prompt:" +finalPrompt );
+        return finalPrompt;
+    }
 
-        if (query.isEmpty() || query.contains("describe")) {
-            return systemPrompt + "Describe what you see, focusing on obstacles or important objects.";
-        } else if (query.contains("obstacle") || query.contains("ahead") || query.contains("path")) {
-            return systemPrompt + "Describe any obstacles or hazards visible. Mention their approximate location.";
-        } else if (query.contains("read") || query.contains("text")) {
-            return systemPrompt + "Read any visible text in this image clearly.";
+    private String buildObstaclePrompt(String customInstruction) {
+        if (customInstruction != null && !customInstruction.trim().isEmpty()) {
+            return "You are assisting a blind person. " + customInstruction + " If the path is clear, respond with only the word 'clear'.";
         } else {
-            return systemPrompt + "User asked: '" + userQuery + "'. Answer their question based on the image.";
+            return "You are assisting a blind person. Describe obstacles or important objects. If the path is clear, respond with only the word 'clear'.";
         }
     }
 }
