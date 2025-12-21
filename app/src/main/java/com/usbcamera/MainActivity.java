@@ -10,12 +10,15 @@ import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+
+import com.google.android.material.card.MaterialCardView;
 
 import java.util.HashMap;
 
@@ -25,6 +28,7 @@ public class MainActivity extends AppCompatActivity {
     private UsbManager usbManager;
     private TextView statusText;
     private TextView deviceInfoText;
+    private MaterialCardView deviceInfoCard;
     private Button scanButton;
     private Button previewButton;
     private UsbDevice usbCamera;
@@ -44,6 +48,7 @@ public class MainActivity extends AppCompatActivity {
                 UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                 statusText.setText("USB Device Detached");
                 deviceInfoText.setText("");
+                deviceInfoCard.setVisibility(View.GONE);
                 usbCamera = null;
             } else if (ACTION_USB_PERMISSION.equals(action)) {
                 synchronized (this) {
@@ -79,6 +84,7 @@ public class MainActivity extends AppCompatActivity {
 
         statusText = findViewById(R.id.status_text);
         deviceInfoText = findViewById(R.id.device_info_text);
+        deviceInfoCard = findViewById(R.id.device_info_card);
         scanButton = findViewById(R.id.scan_button);
         previewButton = findViewById(R.id.preview_button);
 
@@ -115,6 +121,7 @@ public class MainActivity extends AppCompatActivity {
         if (deviceList.isEmpty()) {
             statusText.setText("No USB devices found. Please connect a USB camera via OTG.");
             deviceInfoText.setText("");
+            deviceInfoCard.setVisibility(View.GONE);
             return;
         }
 
@@ -156,6 +163,7 @@ public class MainActivity extends AppCompatActivity {
         info.append("Interface Count: ").append(device.getInterfaceCount()).append("\n");
 
         deviceInfoText.setText(info.toString());
+        deviceInfoCard.setVisibility(View.VISIBLE);
     }
 
     private void requestPermission(UsbDevice device) {
